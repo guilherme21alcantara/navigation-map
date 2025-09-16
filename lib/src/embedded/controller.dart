@@ -43,13 +43,6 @@ class MapBoxNavigationViewController {
       .invokeMethod<double>('getDurationRemaining')
       .then((dynamic result) => result as double);
 
-  ///Build the Route Used for the Navigation
-  ///
-  /// [wayPoints] must not be null. A collection of [WayPoint](longitude,
-  /// latitude and name). Must be at least 2 or at most 25. Cannot use
-  /// drivingWithTraffic mode if more than 3-waypoints.
-  /// [options] options used to generate the route and used while navigating
-  ///
   Future<bool> buildRoute({
     required List<WayPoint> wayPoints,
     MapBoxOptions? options,
@@ -64,8 +57,8 @@ class MapBoxNavigationViewController {
         ''',
       );
     }
-    final pointList = <Map<String, Object?>>[];
 
+    final pointList = <Map<String, Object?>>[];
     for (var i = 0; i < wayPoints.length; i++) {
       final wayPoint = wayPoints[i];
       assert(wayPoint.name != null, 'Error: waypoints need name');
@@ -90,6 +83,7 @@ class MapBoxNavigationViewController {
     args['wayPoints'] = wayPointMap;
 
     _routeEventSubscription = _streamRouteEvent!.listen(_onProgressData);
+
     return _methodChannel
         .invokeMethod('buildRoute', args)
         .then((dynamic result) => result as bool);
@@ -116,7 +110,6 @@ class MapBoxNavigationViewController {
   Future<bool?> startNavigation({MapBoxOptions? options}) async {
     Map<String, dynamic>? args;
     if (options != null) args = options.toMap();
-    //_routeEventSubscription = _streamRouteEvent.listen(_onProgressData);
     return _methodChannel.invokeMethod('startNavigation', args);
   }
 
@@ -136,7 +129,6 @@ class MapBoxNavigationViewController {
   }
 
   /// Call this to cancel the subscription to route events
-  /// Add here future disposing methods
   void dispose() {
     _routeEventSubscription.cancel();
   }
@@ -148,21 +140,27 @@ class MapBoxNavigationViewController {
   Stream<RouteEvent>? get _streamRouteEvent {
     return _eventChannel
         .receiveBroadcastStream()
-        .map((dynamic event) => _parseRouteEvent(event as String));
+        .map((dynamic event) => _parseRouteEvent(event as String))
+        .where((event) => event != null)
+        .cast<RouteEvent>();
   }
 
-  RouteEvent _parseRouteEvent(String jsonString) {
-    RouteEvent event;
-    final map = json.decode(jsonString) as Map<String, dynamic>;
-    final progressEvent = RouteProgressEvent.fromJson(map);
-    if (progressEvent.isProgressEvent!) {
-      event = RouteEvent(
-        eventType: MapBoxEvent.progress_change,
-        data: progressEvent,
-      );
-    } else {
-      event = RouteEvent.fromJson(map);
+  RouteEvent? _parseRouteEvent(String jsonString) {
+    try {
+      final map = json.decode(jsonString) as Map<String, dynamic>;
+      final progressEvent = RouteProgressEvent.fromJson(map);
+      if (progressEvent.isProgressEvent ?? false) {
+        return RouteEvent(
+          eventType: MapBoxEvent.progress_change,
+          data: progressEvent,
+        );
+      } else {
+        return RouteEvent.fromJson(map);
+      }
+    } catch (e) {
+      debugPrint(
+          'Erro ao decodificar JSON do Mapbox: $e\nJSON recebido: $jsonString');
+      return null; // ignora evento malformado
     }
-    return event;
   }
 }

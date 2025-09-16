@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.location.Location
 import android.os.Bundle
-
 import org.json.JSONObject
 import androidx.appcompat.app.AppCompatActivity
 import com.eopeter.fluttermapboxnavigation.FlutterMapboxNavigationPlugin
@@ -31,7 +30,6 @@ import com.mapbox.maps.plugin.gestures.gestures
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
 import com.mapbox.navigation.base.extensions.applyLanguageAndVoiceUnitOptions
 import com.mapbox.navigation.base.options.NavigationOptions
-import com.mapbox.navigation.base.route.NavigationRoute
 import com.mapbox.navigation.base.route.NavigationRouterCallback
 import com.mapbox.navigation.base.route.RouterFailure
 import com.mapbox.navigation.base.route.RouterOrigin
@@ -49,52 +47,34 @@ import com.mapbox.navigation.core.trip.session.VoiceInstructionsObserver
 import com.mapbox.navigation.dropin.map.MapViewObserver
 import com.mapbox.navigation.dropin.navigationview.NavigationViewListener
 import com.mapbox.navigation.utils.internal.ifNonNull
-
-
-import android.view.View
-import androidx.appcompat.widget.SearchView
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-
 import android.widget.FrameLayout
-import android.view.ViewGroup.LayoutParams
-import android.graphics.Color
-
 
 class NavigationActivity : AppCompatActivity() {
+
     private var finishBroadcastReceiver: BroadcastReceiver? = null
     private var addWayPointsBroadcastReceiver: BroadcastReceiver? = null
     private var points: MutableList<Waypoint> = mutableListOf()
     private var waypointSet: WaypointSet = WaypointSet()
-    private var canResetRoute: Boolean = false
-    private var accessToken: String? = null
-    private var lastLocation: Location? = null
     private var isNavigationInProgress = false
+    private var lastLocation: Location? = null
+    private var accessToken: String? = null
+    private val addedWaypoints = WaypointSet()
 
+    private lateinit var binding: NavigationActivityBinding
 
-   
-    private lateinit var overlayContainer: FrameLayout
-    
-    
     private val navigationStateListener = object : NavigationViewListener() {
-        override fun onFreeDrive() {
+        override fun onFreeDrive() { }
 
-        }
+        override fun onDestinationPreview() { }
 
-        override fun onDestinationPreview() {
-
-        }
-
-        override fun onRoutePreview() {
-
-        }
+        override fun onRoutePreview() { }
 
         override fun onActiveNavigation() {
             isNavigationInProgress = true
         }
 
         override fun onArrival() {
-
+            isNavigationInProgress = false
         }
     }
 
@@ -104,20 +84,14 @@ class NavigationActivity : AppCompatActivity() {
         binding = NavigationActivityBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-
-
         binding.navigationView.addListener(navigationStateListener)
-        binding.navigationView.registerMapObserver(onMapClick)
-        accessToken =
-            PluginUtilities.getResourceFromContext(this.applicationContext, "mapbox_access_token")
+        accessToken = PluginUtilities.getResourceFromContext(this.applicationContext, "mapbox_access_token")
 
         val navigationOptions = NavigationOptions.Builder(this.applicationContext)
             .accessToken(accessToken)
             .build()
 
-        MapboxNavigationApp
-            .setup(navigationOptions)
-            .attach(this)
+        MapboxNavigationApp.setup(navigationOptions).attach(this)
 
         if (FlutterMapboxNavigationPlugin.longPressDestinationEnabled) {
             binding.navigationView.registerMapObserver(onMapLongClick)
@@ -129,119 +103,83 @@ class NavigationActivity : AppCompatActivity() {
         if (FlutterMapboxNavigationPlugin.enableOnMapTapCallback) {
             binding.navigationView.registerMapObserver(onMapClick)
         }
-        val act = this
-        // Add custom view binders
+
+        // Custom button binder
         binding.navigationView.customizeViewBinders {
-            infoPanelEndNavigationButtonBinder =
-                CustomInfoPanelEndNavButtonBinder(act)
+            infoPanelEndNavigationButtonBinder = CustomInfoPanelEndNavButtonBinder(this@NavigationActivity)
         }
 
-        MapboxNavigationApp.current()?.registerBannerInstructionsObserver(this.bannerInstructionObserver)
-        MapboxNavigationApp.current()?.registerVoiceInstructionsObserver(this.voiceInstructionObserver)
-        MapboxNavigationApp.current()?.registerOffRouteObserver(this.offRouteObserver)
-        MapboxNavigationApp.current()?.registerRoutesObserver(this.routesObserver)
+        // Register observers
+        MapboxNavigationApp.current()?.registerBannerInstructionsObserver(bannerInstructionObserver)
+        MapboxNavigationApp.current()?.registerVoiceInstructionsObserver(voiceInstructionObserver)
+        MapboxNavigationApp.current()?.registerOffRouteObserver(offRouteObserver)
+        MapboxNavigationApp.current()?.registerRoutesObserver(routesObserver)
         MapboxNavigationApp.current()?.registerLocationObserver(locationObserver)
         MapboxNavigationApp.current()?.registerRouteProgressObserver(routeProgressObserver)
         MapboxNavigationApp.current()?.registerArrivalObserver(arrivalObserver)
 
-       finishBroadcastReceiver = object : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        FlutterMapboxNavigationPlugin.eventSink?.success(
-            mapOf("event" to MapBoxEvents.NAVIGATION_CANCELLED)
-        )
-        isNavigationInProgress = false
-        // Não chame finish() aqui para evitar fechar o app
-    }
-}
-
+        // BroadcastReceiver para finalizar navegação
+        finishBroadcastReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                tryCancelNavigation()
+            }
+        }
         addWayPointsBroadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                //get waypoints
                 val stops = intent.getSerializableExtra("waypoints") as? MutableList<Waypoint>
-                val nextIndex = 1
-                if (stops != null) {
-                    //append to points
-                    if (points.count() >= nextIndex)
-                        points.addAll(nextIndex, stops)
-                    else
-                        points.addAll(stops)
-                }
+                if (stops != null) points.addAll(stops)
             }
         }
 
-        registerReceiver(
-            finishBroadcastReceiver,
-            IntentFilter(NavigationLauncher.KEY_STOP_NAVIGATION)
-        )
+        registerReceiver(finishBroadcastReceiver, IntentFilter(NavigationLauncher.KEY_STOP_NAVIGATION))
+        registerReceiver(addWayPointsBroadcastReceiver, IntentFilter(NavigationLauncher.KEY_ADD_WAYPOINTS))
 
-        registerReceiver(
-            addWayPointsBroadcastReceiver,
-            IntentFilter(NavigationLauncher.KEY_ADD_WAYPOINTS)
-        )
+        // Map style
+        var styleUrlDay = FlutterMapboxNavigationPlugin.mapStyleUrlDay ?: Style.MAPBOX_STREETS
+        var styleUrlNight = FlutterMapboxNavigationPlugin.mapStyleUrlNight ?: Style.DARK
 
-        // TODO set the style Uri
-        var styleUrlDay = FlutterMapboxNavigationPlugin.mapStyleUrlDay
-        var styleUrlNight = FlutterMapboxNavigationPlugin.mapStyleUrlNight
-
-        if (styleUrlDay == null) styleUrlDay = Style.MAPBOX_STREETS
-        if (styleUrlNight == null) styleUrlNight = Style.DARK
-        // set map style
-        binding.navigationView.customizeViewStyles {}
-
-        // set map style
         binding.navigationView.customizeViewOptions {
             mapStyleUriDay = styleUrlDay
             mapStyleUriNight = styleUrlNight
         }
 
+        // Inicia FreeDrive se habilitado
         if (FlutterMapboxNavigationPlugin.enableFreeDriveMode) {
             binding.navigationView.api.routeReplayEnabled(FlutterMapboxNavigationPlugin.simulateRoute)
             binding.navigationView.api.startFreeDrive()
             return
         }
 
+        // Inicializa rota se existirem waypoints
         val p = intent.getSerializableExtra("waypoints") as? MutableList<Waypoint>
         if (p != null) points = p
         points.map { waypointSet.add(it) }
-        requestRoutes(waypointSet)
-
+        if (points.isNotEmpty()) requestRoutes(waypointSet)
     }
-override fun onDestroy() {
-    super.onDestroy()
 
-    // Remove NavigationView listeners
-    if (FlutterMapboxNavigationPlugin.longPressDestinationEnabled) {
-        binding.navigationView.unregisterMapObserver(onMapLongClick)
+    override fun onDestroy() {
+        super.onDestroy()
+
+        if (FlutterMapboxNavigationPlugin.longPressDestinationEnabled) binding.navigationView.unregisterMapObserver(onMapLongClick)
+        if (FlutterMapboxNavigationPlugin.enableOnMapTapCallback) binding.navigationView.unregisterMapObserver(onMapClick)
+        binding.navigationView.removeListener(navigationStateListener)
+
+        MapboxNavigationApp.current()?.unregisterBannerInstructionsObserver(bannerInstructionObserver)
+        MapboxNavigationApp.current()?.unregisterVoiceInstructionsObserver(voiceInstructionObserver)
+        MapboxNavigationApp.current()?.unregisterOffRouteObserver(offRouteObserver)
+        MapboxNavigationApp.current()?.unregisterRoutesObserver(routesObserver)
+        MapboxNavigationApp.current()?.unregisterLocationObserver(locationObserver)
+        MapboxNavigationApp.current()?.unregisterRouteProgressObserver(routeProgressObserver)
+        MapboxNavigationApp.current()?.unregisterArrivalObserver(arrivalObserver)
+
+        finishBroadcastReceiver?.let { unregisterReceiver(it); finishBroadcastReceiver = null }
+        addWayPointsBroadcastReceiver?.let { unregisterReceiver(it); addWayPointsBroadcastReceiver = null }
     }
-    if (FlutterMapboxNavigationPlugin.enableOnMapTapCallback) {
-        binding.navigationView.unregisterMapObserver(onMapClick)
-    }
-    binding.navigationView.removeListener(navigationStateListener)
 
-    // Unregister all MapboxNavigation observers
-    MapboxNavigationApp.current()?.unregisterBannerInstructionsObserver(this.bannerInstructionObserver)
-    MapboxNavigationApp.current()?.unregisterVoiceInstructionsObserver(this.voiceInstructionObserver)
-    MapboxNavigationApp.current()?.unregisterOffRouteObserver(this.offRouteObserver)
-    MapboxNavigationApp.current()?.unregisterRoutesObserver(this.routesObserver)
-    MapboxNavigationApp.current()?.unregisterLocationObserver(locationObserver)
-    MapboxNavigationApp.current()?.unregisterRouteProgressObserver(routeProgressObserver)
-    MapboxNavigationApp.current()?.unregisterArrivalObserver(arrivalObserver)
-
-    // **Desregistrar os BroadcastReceivers**
-    finishBroadcastReceiver?.let {
-        unregisterReceiver(it)
-        finishBroadcastReceiver = null
-    }
-    addWayPointsBroadcastReceiver?.let {
-        unregisterReceiver(it)
-        addWayPointsBroadcastReceiver = null
-    }
-}
-
-
-    fun tryCancelNavigation() {
+    private fun tryCancelNavigation() {
         if (isNavigationInProgress) {
             isNavigationInProgress = false
+            binding.navigationView.api.startFreeDrive()
             sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
         }
     }
@@ -249,8 +187,7 @@ override fun onDestroy() {
     private fun requestRoutes(waypointSet: WaypointSet) {
         sendEvent(MapBoxEvents.ROUTE_BUILDING)
         MapboxNavigationApp.current()!!.requestRoutes(
-            routeOptions = RouteOptions
-                .builder()
+            routeOptions = RouteOptions.builder()
                 .applyDefaultNavigationOptions()
                 .applyLanguageAndVoiceUnitOptions(this)
                 .coordinatesList(waypointSet.coordinatesList())
@@ -264,169 +201,52 @@ override fun onDestroy() {
                 .steps(true)
                 .build(),
             callback = object : NavigationRouterCallback {
-                override fun onCanceled(routeOptions: RouteOptions, routerOrigin: RouterOrigin) {
-                    sendEvent(MapBoxEvents.ROUTE_BUILD_CANCELLED)
-                }
-
-                override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
-                    sendEvent(MapBoxEvents.ROUTE_BUILD_FAILED)
-                }
-
-                override fun onRoutesReady(
-                    routes: List<NavigationRoute>,
-                    routerOrigin: RouterOrigin
-                ) {
-                    sendEvent(
-                        MapBoxEvents.ROUTE_BUILT,
-                        Gson().toJson(routes.map { it.directionsRoute.toJson() })
-                    )
+                override fun onRoutesReady(routes: List<com.mapbox.navigation.base.route.NavigationRoute>, routerOrigin: RouterOrigin) {
+                    sendEvent(MapBoxEvents.ROUTE_BUILT, Gson().toJson(routes.map { it.directionsRoute.toJson() }))
                     if (routes.isEmpty()) {
                         sendEvent(MapBoxEvents.ROUTE_BUILD_NO_ROUTES_FOUND)
+                        binding.navigationView.api.startFreeDrive()
                         return
                     }
                     binding.navigationView.api.routeReplayEnabled(FlutterMapboxNavigationPlugin.simulateRoute)
                     binding.navigationView.api.startActiveGuidance(routes)
                 }
-            }
-        )
-    }
 
-
-    // MultiWaypoint Navigation
-    private fun addWaypoint(destination: Point, name: String?) {
-        val originLocation = lastLocation
-        val originPoint = originLocation?.let {
-            Point.fromLngLat(it.longitude, it.latitude)
-        } ?: return
-
-        // we always start a route from the current location
-        if (addedWaypoints.isEmpty) {
-            addedWaypoints.add(Waypoint(originPoint))
-        }
-
-        if (!name.isNullOrBlank()) {
-            // When you add named waypoints, the string you use here inside "" would be shown in `Maneuver` and played in `Voice` instructions.
-            // In this example waypoint names will be visible in the logcat.
-            addedWaypoints.add(Waypoint(name, destination))
-        } else {
-            // When you add silent waypoints, make sure it is followed by a regular or named waypoint, otherwise silent waypoint is treated as a regular waypoint
-            addedWaypoints.add(Waypoint(destination, true))
-        }
-
-        // execute a route request
-        // it's recommended to use the
-        // applyDefaultNavigationOptions and applyLanguageAndVoiceUnitOptions
-        // that make sure the route request is optimized
-        // to allow for support of all of the Navigation SDK features
-        MapboxNavigationApp.current()!!.requestRoutes(
-            routeOptions = RouteOptions
-                .builder()
-                .applyDefaultNavigationOptions()
-                .applyLanguageAndVoiceUnitOptions(this)
-                .coordinatesList(addedWaypoints.coordinatesList())
-                .waypointIndicesList(addedWaypoints.waypointsIndices())
-                .waypointNamesList(addedWaypoints.waypointsNames())
-                .alternatives(true)
-                .build(),
-            callback = object : NavigationRouterCallback {
-                override fun onRoutesReady(
-                    routes: List<NavigationRoute>,
-                    routerOrigin: RouterOrigin
-                ) {
-                    sendEvent(
-                        MapBoxEvents.ROUTE_BUILT,
-                        Gson().toJson(routes.map { it.directionsRoute.toJson() })
-                    )
-                    binding.navigationView.api.routeReplayEnabled(true)
-                    binding.navigationView.api.startActiveGuidance(routes)
-                }
-
-                override fun onFailure(
-                    reasons: List<RouterFailure>,
-                    routeOptions: RouteOptions
-                ) {
+                override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
                     sendEvent(MapBoxEvents.ROUTE_BUILD_FAILED)
+                    binding.navigationView.api.startFreeDrive()
                 }
 
                 override fun onCanceled(routeOptions: RouteOptions, routerOrigin: RouterOrigin) {
                     sendEvent(MapBoxEvents.ROUTE_BUILD_CANCELLED)
+                    binding.navigationView.api.startFreeDrive()
                 }
             }
         )
     }
 
-    // Resets the current route
-    private fun resetCurrentRoute() {
-//        if (mapboxNavigation.getRoutes().isNotEmpty()) {
-//            mapboxNavigation.setRoutes(emptyList()) // reset route
-//            addedWaypoints.clear() // reset stored waypoints
-//        }
-    }
-
-    private fun setRouteAndStartNavigation(routes: List<DirectionsRoute>) {
-        // set routes, where the first route in the list is the primary route that
-        // will be used for active guidance
-        // mapboxNavigation.setRoutes(routes)
-    }
-
-    private fun clearRouteAndStopNavigation() {
-        // clear
-        // mapboxNavigation.setRoutes(listOf())
-    }
-
-
-    /**
-     * Helper class that keeps added waypoints and transforms them to the [RouteOptions] params.
-     */
-    private val addedWaypoints = WaypointSet()
-
-
-    /**
-     * Bindings to the Navigation Activity.
-     */
-    private lateinit var binding: NavigationActivityBinding// MapboxActivityTurnByTurnExperienceBinding
-
-
-    /**
-     * Gets notified with progress along the currently active route.
-     */
+    // Observers
     private val routeProgressObserver = RouteProgressObserver { routeProgress ->
-        //Notify the client
-        val progressEvent = MapBoxRouteProgressEvent(routeProgress)
         FlutterMapboxNavigationPlugin.distanceRemaining = routeProgress.distanceRemaining
         FlutterMapboxNavigationPlugin.durationRemaining = routeProgress.durationRemaining
-        sendEvent(progressEvent)
+        sendEvent(MapBoxRouteProgressEvent(routeProgress))
     }
 
     private val arrivalObserver: ArrivalObserver = object : ArrivalObserver {
         override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
             isNavigationInProgress = false
+            binding.navigationView.api.startFreeDrive()
             sendEvent(MapBoxEvents.ON_ARRIVAL)
         }
 
-        override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {
+        override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) { }
 
-        }
-
-        override fun onWaypointArrival(routeProgress: RouteProgress) {
-
-        }
+        override fun onWaypointArrival(routeProgress: RouteProgress) { }
     }
 
-    /**
-     * Gets notified with location updates.
-     *
-     * Exposes raw updates coming directly from the location services
-     * and the updates enhanced by the Navigation SDK (cleaned up and matched to the road).
-     */
     private val locationObserver = object : LocationObserver {
-        override fun onNewLocationMatcherResult(locationMatcherResult: LocationMatcherResult) {
-            lastLocation = locationMatcherResult.enhancedLocation
-        }
-
-        override fun onNewRawLocation(rawLocation: Location) {
-            // no impl
-        }
+        override fun onNewLocationMatcherResult(locationMatcherResult: LocationMatcherResult) { lastLocation = locationMatcherResult.enhancedLocation }
+        override fun onNewRawLocation(rawLocation: Location) { }
     }
 
     private val bannerInstructionObserver = BannerInstructionsObserver { bannerInstructions ->
@@ -438,30 +258,23 @@ override fun onDestroy() {
     }
 
     private val offRouteObserver = OffRouteObserver { offRoute ->
-        if (offRoute) {
-            sendEvent(MapBoxEvents.USER_OFF_ROUTE)
-        }
+        if (offRoute) sendEvent(MapBoxEvents.USER_OFF_ROUTE)
     }
 
     private val routesObserver = RoutesObserver { routeUpdateResult ->
-        if (routeUpdateResult.navigationRoutes.isNotEmpty()) {
-            sendEvent(MapBoxEvents.REROUTE_ALONG);
+        if (routeUpdateResult.navigationRoutes.isEmpty() && isNavigationInProgress) {
+            binding.navigationView.api.startFreeDrive()
+            isNavigationInProgress = false
+            sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
+        } else if (routeUpdateResult.navigationRoutes.isNotEmpty()) {
+            sendEvent(MapBoxEvents.REROUTE_ALONG)
         }
     }
 
-    /**
-     * Notifies with attach and detach events on [MapView]
-     */
+    // Map click/long click
     private val onMapLongClick = object : MapViewObserver(), OnMapLongClickListener {
-
-        override fun onAttached(mapView: MapView) {
-            mapView.gestures.addOnMapLongClickListener(this)
-        }
-
-        override fun onDetached(mapView: MapView) {
-            mapView.gestures.removeOnMapLongClickListener(this)
-        }
-
+        override fun onAttached(mapView: MapView) { mapView.gestures.addOnMapLongClickListener(this) }
+        override fun onDetached(mapView: MapView) { mapView.gestures.removeOnMapLongClickListener(this) }
         override fun onMapLongClick(point: Point): Boolean {
             ifNonNull(lastLocation) {
                 val waypointSet = WaypointSet()
@@ -473,24 +286,11 @@ override fun onDestroy() {
         }
     }
 
-    /**
-     * Notifies with attach and detach events on [MapView]
-     */
     private val onMapClick = object : MapViewObserver(), OnMapClickListener {
-
-        override fun onAttached(mapView: MapView) {
-            mapView.gestures.addOnMapClickListener(this)
-        }
-
-        override fun onDetached(mapView: MapView) {
-            mapView.gestures.removeOnMapClickListener(this)
-        }
-
+        override fun onAttached(mapView: MapView) { mapView.gestures.addOnMapClickListener(this) }
+        override fun onDetached(mapView: MapView) { mapView.gestures.removeOnMapClickListener(this) }
         override fun onMapClick(point: Point): Boolean {
-            var waypoint = mapOf<String, String>(
-                Pair("latitude", point.latitude().toString()),
-                Pair("longitude", point.longitude().toString())
-            )
+            val waypoint = mapOf("latitude" to point.latitude().toString(), "longitude" to point.longitude().toString())
             sendEvent(MapBoxEvents.ON_MAP_TAP, JSONObject(waypoint).toString())
             return false
         }

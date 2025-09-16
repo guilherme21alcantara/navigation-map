@@ -97,7 +97,7 @@ open class TurnByTurn(
         MapboxNavigationApp
             .setup(navigationOptions)
             .attach(this.activity as LifecycleOwner)
-
+    
         registerObservers()
     }
 
@@ -181,11 +181,13 @@ open class TurnByTurn(
         )
     }
 
-    private fun clearRoute(methodCall: MethodCall, result: MethodChannel.Result) {
-        this.currentRoutes = null
-        MapboxNavigationApp.current()?.stopTripSession()
-        PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
-    }
+   private fun clearRoute(methodCall: MethodCall, result: MethodChannel.Result) {
+    this.currentRoutes = null
+    this.binding.navigationView.api.startFreeDrive()
+    PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
+    result.success(true)
+}
+
 
     private fun startFreeDrive() {
         this.binding.navigationView.api.startFreeDrive()
@@ -213,11 +215,11 @@ open class TurnByTurn(
         PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_RUNNING)
     }
 
-    private fun finishNavigation(isOffRouted: Boolean = false) {
-        MapboxNavigationApp.current()?.stopTripSession()
-        this.isNavigationCanceled = true
-        PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
-    }
+private fun finishNavigation(isOffRouted: Boolean = false) {
+    this.binding.navigationView.api.startFreeDrive()
+    this.isNavigationCanceled = true
+    PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
+}
 
     private fun setOptions(arguments: Map<*, *>) {
         val navMode = arguments["mode"] as? String
@@ -323,12 +325,14 @@ open class TurnByTurn(
     }
 
     private val arrivalObserver: ArrivalObserver = object : ArrivalObserver {
-        override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
-            PluginUtilities.sendEvent(MapBoxEvents.ON_ARRIVAL)
-        }
-        override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {}
-        override fun onWaypointArrival(routeProgress: RouteProgress) {}
+    override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
+        this@TurnByTurn.binding.navigationView.api.startFreeDrive()
+        PluginUtilities.sendEvent(MapBoxEvents.ON_ARRIVAL)
     }
+    override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {}
+    override fun onWaypointArrival(routeProgress: RouteProgress) {}
+}
+
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
     override fun onActivityStarted(activity: Activity) {}
@@ -336,9 +340,13 @@ open class TurnByTurn(
     override fun onActivityPaused(activity: Activity) {}
     override fun onActivityStopped(activity: Activity) {}
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-    override fun onActivityDestroyed(activity: Activity) {
-        unregisterObservers()
-        methodChannel?.setMethodCallHandler(null)
-        eventChannel?.setStreamHandler(null)
-    }
+   override fun onActivityDestroyed(activity: Activity) {
+    if (activity != this.activity) return // só limpa se for a activity real do app
+    if (!isNavigationCanceled) return      // não desmonta se só finalizou navegação
+
+    unregisterObservers()
+    methodChannel?.setMethodCallHandler(null)
+    eventChannel?.setStreamHandler(null)
+}
+
 }

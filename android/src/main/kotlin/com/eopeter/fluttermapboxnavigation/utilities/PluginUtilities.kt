@@ -146,6 +146,16 @@ class PluginUtilities {
             else
                 activity.intent.getSerializableExtra(name) as T
         }
+        fun sendFreeDriveStartedEvent() {
+    val jsonString = "{" +
+        "  \"eventType\": \"${MapBoxEvents.FREE_DRIVE_STARTED.value}\"," +
+        "  \"data\": \"\"" +
+        "}"
+    FlutterMapboxNavigationPlugin.eventSink?.success(jsonString)
+    android.util.Log.i("Mapbox", "Disparando evento: free_drive_started")
+
+}
+
     }
 
 }

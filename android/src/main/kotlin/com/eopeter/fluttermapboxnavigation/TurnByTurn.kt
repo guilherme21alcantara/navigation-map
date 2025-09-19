@@ -121,23 +121,43 @@ open class TurnByTurn(
         }
     }
 
-    private fun buildRoute(methodCall: MethodCall, result: MethodChannel.Result) {
-        this.isNavigationCanceled = false
+private fun buildRoute(methodCall: MethodCall, result: MethodChannel.Result) {
+    this.isNavigationCanceled = false
 
-        val arguments = methodCall.arguments as? Map<*, *>
-        if (arguments != null) this.setOptions(arguments)
-        this.addedWaypoints.clear()
-        val points = arguments?.get("wayPoints") as HashMap<*, *>
-        for (item in points) {
-            val point = item.value as HashMap<*, *>
-            val latitude = point["Latitude"] as Double
-            val longitude = point["Longitude"] as Double
-            val isSilent = point["IsSilent"] as Boolean
-            this.addedWaypoints.add(Waypoint(Point.fromLngLat(longitude, latitude), isSilent))
-        }
-        this.getRoute(this.context)
-        result.success(true)
+    val arguments = methodCall.arguments as? Map<*, *>
+    if (arguments != null) this.setOptions(arguments)
+
+    // ✅ Limpa rota anterior e reseta visual
+    MapboxNavigationApp.current()?.setRoutes(emptyList())
+    binding.navigationView.api.startRoutePreview(emptyList())
+    binding.navigationView.api.startFreeDrive()
+
+    // ✅ Rebind apenas do botão de encerrar navegação
+    binding.navigationView.customizeViewBinders {
+        infoPanelEndNavigationButtonBinder = CustomInfoPanelEndNavButtonBinder(activity)
     }
+
+    // ✅ Reativa toque no mapa
+    binding.navigationView.customizeViewOptions {
+        enableMapLongClickIntercept = true
+    }
+
+    // ✅ Define nova rota
+    this.addedWaypoints.clear()
+    val points = arguments?.get("wayPoints") as HashMap<*, *>
+    for (item in points) {
+        val point = item.value as HashMap<*, *>
+        val latitude = point["Latitude"] as Double
+        val longitude = point["Longitude"] as Double
+        val isSilent = point["IsSilent"] as Boolean
+        this.addedWaypoints.add(Waypoint(Point.fromLngLat(longitude, latitude), isSilent))
+    }
+
+    // ✅ Busca nova rota
+    this.getRoute(this.context)
+    result.success(true)
+}
+
 
     private fun getRoute(context: Context) {
         MapboxNavigationApp.current()!!.requestRoutes(
@@ -216,10 +236,24 @@ open class TurnByTurn(
     }
 
 private fun finishNavigation(isOffRouted: Boolean = false) {
-    this.binding.navigationView.api.startFreeDrive()
+    if (this.isNavigationCanceled) return // ✅ evita chamadas duplicadas
+
+    val nav = MapboxNavigationApp.current() ?: return
+    nav.setRoutes(emptyList())
+    binding.navigationView.api.startFreeDrive()
+    binding.navigationView.api.startRoutePreview(emptyList())
+    binding.navigationView.customizeViewBinders {
+        infoPanelEndNavigationButtonBinder = null
+    }
+    binding.navigationView.customizeViewOptions {
+        enableMapLongClickIntercept = false
+    }
+
     this.isNavigationCanceled = true
     PluginUtilities.sendEvent(MapBoxEvents.NAVIGATION_CANCELLED)
 }
+
+
 
     private fun setOptions(arguments: Map<*, *>) {
         val navMode = arguments["mode"] as? String

@@ -18,6 +18,8 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
 import org.json.JSONObject
 
+
+
 class EmbeddedNavigationMapView(
     context: Context,
     activity: Activity,

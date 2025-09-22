@@ -65,7 +65,7 @@ open class TurnByTurn(
     private var mapStyleUrlNight: String? = null
     private var navigationLanguage = "en"
     private var navigationVoiceUnits = DirectionsCriteria.IMPERIAL
-    private var zoom = 15.0
+    private var zoom = 35.0
     private var bearing = 0.0
     private var tilt = 0.0
     private var distanceRemaining: Float? = null
@@ -96,8 +96,7 @@ open class TurnByTurn(
 
         MapboxNavigationApp
             .setup(navigationOptions)
-            .attach(this.activity as LifecycleOwner)
-    
+            .attach(this.activity as LifecycleOwner) 
         registerObservers()
     }
 
@@ -184,6 +183,7 @@ private fun buildRoute(methodCall: MethodCall, result: MethodChannel.Result) {
                     )
                     this@TurnByTurn.binding.navigationView.api.routeReplayEnabled(this@TurnByTurn.simulateRoute)
                     this@TurnByTurn.binding.navigationView.api.startRoutePreview(routes)
+                    
                     this@TurnByTurn.binding.navigationView.customizeViewBinders {
                         this.infoPanelEndNavigationButtonBinder =
                             CustomInfoPanelEndNavButtonBinder(activity)
@@ -283,7 +283,7 @@ private fun finishNavigation(isOffRouted: Boolean = false) {
 
         initialLatitude = arguments["initialLatitude"] as? Double
         initialLongitude = arguments["initialLongitude"] as? Double
-        zoom = arguments["zoom"] as? Double ?: 15.0
+        zoom = arguments["zoom"] as? Double ?: 35.0
         bearing = arguments["bearing"] as? Double ?: 0.0
         tilt = arguments["tilt"] as? Double ?: 0.0
         isOptimized = arguments["isOptimized"] as? Boolean ?: false

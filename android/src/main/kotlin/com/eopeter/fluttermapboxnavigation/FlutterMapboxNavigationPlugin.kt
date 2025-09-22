@@ -57,7 +57,7 @@ class FlutterMapboxNavigationPlugin : FlutterPlugin, MethodChannel.MethodCallHan
         var navigationVoiceUnits = DirectionsCriteria.IMPERIAL
         var voiceInstructionsEnabled = true
         var bannerInstructionsEnabled = true
-        var zoom = 15.0
+        var zoom = 25.0
         var bearing = 0.0
         var tilt = 0.0
         var distanceRemaining: Float? = null
